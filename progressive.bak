@@ -1,0 +1,332 @@
+.progressivegame
+	jsr DrawArena			;Draw arena - move into game mode subroutine							
+	jsr drawprogressivewall						
+	.progressivegameloop
+	jsr vsync
+	
+	;ball in play?
+	lda ballinplay
+	cmp #0					;no - check for space bar to release ball
+	bne inplay
+	;get input
+	ldx #&9d
+	jsr inkey
+	bne spacepressed
+	jmp spacenotpressed
+	.spacepressed
+	lda #1
+	sta ballinplay
+	
+	;yes - ball in play! erase,move and draw ball
+	.inplay
+		ERASE BallSprite		;ERASE BallSprite - obviously
+		
+		;MOVE BallSprite
+		lda ballx				;add ballxvel to ballx to get new ball x position
+		clc
+		adc ballxvel
+		sta ballx
+		
+		lda bally				;add ballyvel to bally to get new ball y position
+		clc
+		adc ballyvel
+		sta bally
+		
+		PLOT BallSprite			;PLOT BallSprite - obviously!
+
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+\\\\\\\\\\						is ball below bat?									\\\\\\\\\\\\\\\\\\\\
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+		lda baty
+		clc
+		adc #4
+		cmp bally
+		bne notbelowbat
+		;reset ball position and wait for space to be pressed
+		ERASE BallSprite		;ERASE BallSprite - obviously
+		;decrement lives counter - if below 0 end game
+		lda #20
+		sta xpos
+		lda #31
+		sta ypos
+		jsr Tabxy
+		ldx lives
+		inx
+		stx lives
+		txa
+		jsr oswrch
+		lda #0
+		sta ballinplay
+		lda #20						;change to random value
+		sta ballx
+		lda #120					;change to random value
+		sta bally
+		lda #1 						;always 1 as ball moves down screen at upon release
+		sta ballyvel
+		
+		cpx #52
+		bne stillalive
+		jsr checkhiscore
+		;delay?
+		jmp start
+		.stillalive
+		jmp xblack						;jump past all collision detection as ball is out of play
+		
+		.notbelowbat
+		
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+\\\\\\\\\\\							Y AXIS COLLISION DETECTION								\\\\\\\\\\\\\\\\
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+
+		lda ballyvel 
+		cmp #1
+		bne minusy  					;y is positive so ball is moving down
+				
+		
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+		;is the ball about to hit something white?
+		lda bally						;load ball y coord	
+		clc
+		adc #3							; add 3 to ball y coord as it is 3 pixels high
+		sta YOrd						;save ball y coord to YOrd
+		lda ballx						;load ball x coord
+		sta XOrd						; save ball x coord to XOrd
+		jsr ScreenStartAddress		;get memory address of ballx,bally+3 result stored in &78,&79
+		ldy #0
+		lda (&78),Y					;load A with the value stored at the address stored at &78 + &79
+		cmp #0						;is it black?
+		beq	yblack					
+		lda #&ff					;not black so reverse direction
+		sta ballyvel
+		;did it hit the bat?
+		lda bally
+		cmp baty
+		beq minusy
+		
+		;did it hit a brick?
+		
+		;calculate x coordinate of brick column which contains balls x coord
+		lda ballx
+		sec
+		sbc #14
+		and #252
+		clc
+		adc #14
+		sta brickx
+		
+		;calculate y coordinate of brick row which contains balls y coord
+		lda bally
+		sec
+		sbc #7
+		and #248
+		clc
+		adc #10
+		sta bricky
+		
+		;ERASE BrickSprite
+		jsr eraseBrickSprite
+		jsr increasescore
+		jmp yblack
+		
+		.minusy
+		
+		ldx bally						;load ball y coord	
+		dex							;decrement ball y coord
+		stx YOrd						;save ball y coord to YOrd
+		lda ballx						;load ball x coord
+		sta XOrd						;save ball x coord to YOrd
+		jsr ScreenStartAddress		;get memory address of ballx,bally-1 result stored in &78,&79
+		ldy #0
+		lda (&78),Y					;load A with the value stored at the address stored at &78 + &79
+		cmp #0						;is it black?
+		beq yblack
+		lda #1						;if not black change x direction
+		sta ballyvel
+		;did it hit the top of the arena?
+		lda bally 
+		cmp #8
+		beq yblack
+		;did it hit a brick?
+		;calculate x coordinate of brick column which contains balls x coord
+		lda ballx
+		sec
+		sbc #14
+		and #252
+		clc
+		adc #14
+		sta brickx
+		
+		;calculate y coordinate of brick row which contains balls y coord
+		lda YOrd
+		sec
+		sbc #9
+		and #248
+		clc
+		adc #10
+		sta bricky
+		
+		;ERASE BrickSprite
+		jsr eraseBrickSprite
+		jsr increasescore
+		.yblack
+
+		
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+\\\\\\\\\\\							X AXIS COLLISION DETECTION								\\\\\\\\\\\\\\\\
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+
+
+		lda ballxvel 
+		cmp #1
+		bne minusx  					;x is positive so ball is moving right
+		
+		ldx ballx						;load ball x coord	
+		inx							; increment ball x coord
+		stx XOrd						;save ball x coord to XOrd
+		lda bally						;load ball y coord
+		sta YOrd						; save ball y coord to YOrd
+		jsr ScreenStartAddress		;get memory address of ballx+1,bally result stored in &78,&79
+		ldy #0
+		lda (&78),Y					;load A with the value stored at the address stored at &78 + &79
+		cmp #0						;is it black?
+		beq	xblack					;no so hit something
+		lda #&ff					;reverse direction of travel from heading right to heading left
+		sta ballxvel
+		;did it hit right of arena?
+		lda ballx
+		cmp #65
+		beq minusx
+		
+		;did it hit a brick?
+		
+		;calculate x coordinate of brick column which contains balls x coord
+		lda ballx
+		sec
+		sbc #13
+		and #252
+		clc
+		adc #14
+		sta brickx
+		
+		;calculate y coordinate of brick row which contains balls y coord
+		lda bally
+		sec
+		sbc #10
+		and #248
+		clc
+		adc #10
+		sta bricky
+		
+ 		;ERASE BrickSprite
+		jsr eraseBrickSprite
+		jsr increasescore
+		jmp xblack
+		
+		.minusx
+		
+		ldx ballx						;load ball x coord	
+		dex							;decrement ball x coord
+		stx XOrd						;save ball x coord to XOrd
+		lda bally						;load ball y coord
+		sta YOrd						;save ball y coord to YOrd
+		jsr ScreenStartAddress		;get memory address of ballx-1,bally result stored in &78,&79
+		ldy #0
+		lda (&78),Y					;load A with the value stored at the address stored at &78 + &79
+		cmp #0						;is it black?
+		beq xblack
+		lda #1						;if not black change x direction
+		sta ballxvel
+		;did it hit right of arena?
+		lda ballx
+		cmp #14
+		beq xblack
+		;did it hit a brick?
+		
+		;calculate x coordinate of brick column which contains balls x coord
+		lda ballx
+		sec
+		sbc #15
+		and #252
+		clc
+		adc #14
+		sta brickx
+		
+		;calculate y coordinate of brick row which contains balls y coord
+		lda bally
+		sec
+		sbc #10
+		and #248
+		clc
+		adc #10
+		sta bricky
+		
+		;ERASE BrickSprite
+		jsr eraseBrickSprite
+		jsr increasescore
+		.xblack
+
+
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+\\\\\\\\\\\							END OF COLLISION DETECTION								\\\\\\\\\\\\\\\\
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+			
+
+	
+	.spacenotpressed	
+		ERASE BatSprite
+		
+		;MOVE BatSprite - batx += movebat
+		lda batx
+		clc
+		adc movebat
+		sta batx
+		lda #0
+		sta movebat
+	.batmoveend
+		PLOT BatSprite
+	
+	;get input
+		;key pressed = 'x', movebat = 1
+		LDX #&bd
+		JSR inkey
+		BNE xpressed
+		
+		;key pressed = 'z', movebat = -1
+		LDX #&9e
+		JSR inkey
+		BNE zpressed
+		
+		;key pressed = escape, end game.
+		LDX #&8f
+		JSR inkey
+		BNE escpressed
+		
+		;end of key checks - jump to keyend
+		jmp keyend
+		.xpressed
+		lda batx
+		cmp #62
+		beq keyend
+		lda #1
+		sta movebat
+		jmp keyend
+		
+		.zpressed
+		lda batx
+		cmp #14
+		beq keyend
+		lda #255
+		sta movebat
+		jmp keyend
+		
+		.escpressed
+		;reset all variables
+		;clear screen (might not be needed as might be done with setmode 1 after 'jmp start' below)
+		;draw arena (or attract screen) (probably not needed as done after setmode 1 after 'jmp start' below)
+		lda #0
+		sta ballinplay
+		jmp start
+		
+		.keyend
+	jmp progressivegameloop
+rts
